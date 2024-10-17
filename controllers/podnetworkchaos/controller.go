@@ -17,6 +17,7 @@ package podnetworkchaos
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -87,14 +88,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	failedMessage := ""
 	observedGeneration := obj.ObjectMeta.Generation
 	defer func() {
+		// Avoid waiting too long
 		if err != nil {
 			failedMessage = err.Error()
 		}
 
 		updateError := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			// Avoid waiting too long
+			tctx, cancel := context.WithTimeout(ctx, time.Second*30)
+			defer cancel()
 			obj := &v1alpha1.PodNetworkChaos{}
 
-			if err := r.Client.Get(context.TODO(), req.NamespacedName, obj); err != nil {
+			if err := r.Client.Get(tctx, req.NamespacedName, obj); err != nil {
 				r.Log.Error(err, "unable to get chaos")
 				return err
 			}
@@ -102,7 +107,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			obj.Status.FailedMessage = failedMessage
 			obj.Status.ObservedGeneration = observedGeneration
 
-			return r.Client.Status().Update(context.TODO(), obj)
+			return r.Client.Status().Update(tctx, obj)
 		})
 
 		if updateError != nil {

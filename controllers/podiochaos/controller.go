@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -86,9 +87,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 
 		updateError := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			// Avoid waiting too long
+			tctx, cancel := context.WithTimeout(ctx, time.Second*30)
+			defer cancel()
 			obj := &v1alpha1.PodIOChaos{}
 
-			if err := r.Client.Get(context.TODO(), req.NamespacedName, obj); err != nil {
+			if err := r.Client.Get(tctx, req.NamespacedName, obj); err != nil {
 				r.Log.Error(err, "unable to get chaos")
 				return err
 			}
@@ -98,7 +102,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			obj.Status.Pid = pid
 			obj.Status.StartTime = startTime
 
-			return r.Client.Status().Update(context.TODO(), obj)
+			return r.Client.Status().Update(tctx, obj)
 		})
 
 		if updateError != nil {
